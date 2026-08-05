@@ -1,7 +1,7 @@
 """
 Dosage Safety Pilot v0 - full test suite, single-file version
-(7 drugs: paracetamol, ibuprofen, amoxicillin, loratadine, dexamethasone,
-fentanyl, oxycodone). v0.7 - same engine as demo.py. 111 dev cases total.
+(7 drugs). v0.9 - includes route caution, allergy checking, and
+opioid/CNS-depressant interaction checks. 124 dev cases total.
 
 HOW TO USE:
 Save this as test_all.py, then: python test_all.py
@@ -41,6 +41,19 @@ class PatientInfo:
     # treat that conservatively as opioid-naive, since assuming tolerance
     # without confirmation is the more dangerous direction to guess wrong in.
     opioid_tolerant: bool | None = None
+    # Free-text allergy list, e.g. ["penicillin"]. Checked narrowly -
+    # currently only amoxicillin cross-checks this (penicillin-class
+    # allergy), not a general allergy system. Matched case-insensitively
+    # as a substring, so "penicillin" matches "penicillin allergy (rash)"
+    # too - deliberately permissive, since missing a real allergy is far
+    # worse than an unnecessary flag.
+    allergies: list | None = None
+    # Free-text list of other medications the patient is currently on,
+    # e.g. ["diazepam"]. Checked narrowly - currently only the two opioids
+    # (fentanyl, oxycodone) cross-check this, for CNS depressants
+    # specifically (benzodiazepines, other opioids, alcohol) - not a
+    # general drug-interaction system.
+    concurrent_medications: list | None = None
 
 
 @dataclass
@@ -1062,6 +1075,62 @@ def _validate_patient(patient: PatientInfo) -> str | None:
     return None
 
 
+def _check_route_caution(order: ExtractedOrder, verified_routes: set, special_note: str = None) -> str | None:
+    """Returns a caution reason if the stated route isn't one the drug's
+    thresholds were verified for, or None if the route is fine (or not
+    stated at all - absence of a route is NOT flagged, since most orders
+    in outpatient/ED text reasonably default to oral without saying so
+    explicitly). Deliberately route-specific per drug, not a blanket rule -
+    e.g. dexamethasone's oral/IV/IM doses are commonly treated as
+    interchangeable in real practice, so it has a wider verified set than
+    a drug like loratadine, which has no injectable form at all."""
+    if order.route is None or order.route in verified_routes:
+        return None
+    if special_note:
+        return special_note
+    return (f"Route '{order.route}' stated - the thresholds above were sourced for oral "
+            f"administration; dosing may differ for this route and hasn't been separately "
+            f"verified here.")
+
+
+# Deliberately narrow, not a general allergy system - see PatientInfo.allergies.
+_PENICILLIN_ALLERGY_TERMS = ("penicillin", "amoxicillin", "amoxil", "ampicillin")
+
+
+def _check_penicillin_allergy(patient: PatientInfo) -> str | None:
+    """Returns the matched allergy text if the patient has a documented
+    penicillin-class allergy, None otherwise. Checked as a substring match,
+    case-insensitive, deliberately permissive - "penicillin allergy (rash
+    as a child)" should still match "penicillin"."""
+    if not patient.allergies:
+        return None
+    for a in patient.allergies:
+        if any(term in a.lower() for term in _PENICILLIN_ALLERGY_TERMS):
+            return a
+    return None
+
+
+# Deliberately narrow - CNS depressants relevant to opioid safety
+# specifically, not a general drug-interaction system. See
+# PatientInfo.concurrent_medications.
+_CNS_DEPRESSANT_TERMS = (
+    "diazepam", "midazolam", "lorazepam", "clonazepam", "alprazolam", "temazepam",
+    "benzodiazepine", "benzo",
+    "morphine", "codeine", "tramadol", "hydromorphone", "methadone", "buprenorphine",
+    "alcohol",
+)
+
+
+def _check_concurrent_cns_depressants(patient: PatientInfo) -> list | None:
+    """Returns the list of matched concurrent medications if the patient is
+    on any CNS depressant relevant to opioid safety, None otherwise."""
+    if not patient.concurrent_medications:
+        return None
+    matches = [m for m in patient.concurrent_medications
+               if any(term in m.lower() for term in _CNS_DEPRESSANT_TERMS)]
+    return matches if matches else None
+
+
 def _dose_in_mg(order: ExtractedOrder) -> float | None:
     """Convert extracted dose to plain mg. mg/kg doses need patient weight,
     handled by the caller - this just normalizes units where no weight is
@@ -1102,6 +1171,19 @@ def _check_paracetamol(order: ExtractedOrder, patient: PatientInfo) -> Decision:
             f"Dose stated as a range ({order.dose_range_low:.0f}-{order.dose_value:.0f}{order.dose_unit}) - "
             f"checked against the upper bound ({order.dose_value:.0f}{order.dose_unit})."
         )
+
+    route_reason = _check_route_caution(
+        order, verified_routes={"PO"},
+        special_note=(
+            "Route 'IV' stated - IV paracetamol formulation-specific dosing errors are a "
+            "well-documented, real category of harm (including fatal overdoses from mg/mL "
+            "mix-ups). The thresholds above are for oral administration and have not been "
+            "separately verified for IV use."
+        ) if order.route == "IV" else None,
+    )
+    if route_reason:
+        reasons.append(route_reason)
+        status = Status.FLAG
 
     validation_error = _validate_patient(patient)
     if validation_error:
@@ -1319,6 +1401,11 @@ def _check_ibuprofen(order: ExtractedOrder, patient: PatientInfo) -> Decision:
             f"Dose stated as a range ({order.dose_range_low:.0f}-{order.dose_value:.0f}{order.dose_unit}) - "
             f"checked against the upper bound ({order.dose_value:.0f}{order.dose_unit})."
         )
+
+    route_reason = _check_route_caution(order, verified_routes={"PO"})
+    if route_reason:
+        reasons.append(route_reason)
+        status = Status.FLAG
 
     validation_error = _validate_patient(patient)
     if validation_error:
@@ -1539,6 +1626,26 @@ def _check_amoxicillin(order: ExtractedOrder, patient: PatientInfo) -> Decision:
             f"checked against the upper bound ({order.dose_value:.0f}{order.dose_unit})."
         )
 
+    # Checked FIRST, before anything else - an allergy is an absolute
+    # contraindication regardless of whether the dose itself is correct,
+    # and regardless of whether a dose was even stated.
+    allergy_match = _check_penicillin_allergy(patient)
+    if allergy_match:
+        return Decision(
+            status=Status.BLOCK,
+            reasons=reasons + [
+                f"Patient has a documented '{allergy_match}' allergy - amoxicillin is a "
+                f"penicillin-class antibiotic and should not be given without specific "
+                f"allergist/immunology clearance."
+            ],
+            drug="amoxicillin", extracted=order, patient=patient,
+        )
+
+    route_reason = _check_route_caution(order, verified_routes={"PO"})
+    if route_reason:
+        reasons.append(route_reason)
+        status = Status.FLAG
+
     validation_error = _validate_patient(patient)
     if validation_error:
         return Decision(
@@ -1728,6 +1835,17 @@ def _check_loratadine(order: ExtractedOrder, patient: PatientInfo) -> Decision:
             f"checked against the upper bound ({order.dose_value:.0f}{order.dose_unit})."
         )
 
+    route_reason = _check_route_caution(
+        order, verified_routes={"PO"},
+        special_note=(
+            f"Route '{order.route}' stated - no injectable formulation of loratadine exists. "
+            f"This is likely a transcription error worth verifying, not just a dosing question."
+        ) if order.route not in (None, "PO") else None,
+    )
+    if route_reason:
+        reasons.append(route_reason)
+        status = Status.FLAG
+
     validation_error = _validate_patient(patient)
     if validation_error:
         return Decision(status=Status.FLAG, reasons=reasons + [validation_error],
@@ -1823,6 +1941,16 @@ def _check_dexamethasone(order: ExtractedOrder, patient: PatientInfo) -> Decisio
             f"Dose stated as a range ({order.dose_range_low:.0f}-{order.dose_value:.0f}{order.dose_unit}) - "
             f"checked against the upper bound ({order.dose_value:.0f}{order.dose_unit})."
         )
+
+    # Wider verified set than the other drugs, deliberately: oral, IV, and
+    # IM dexamethasone are commonly treated as clinically interchangeable
+    # in real practice (high bioavailability), unlike paracetamol where the
+    # routes genuinely differ. Flagging all three as "unverified" would
+    # create false-positive noise on legitimate, common orders.
+    route_reason = _check_route_caution(order, verified_routes={"PO", "IV", "IM"})
+    if route_reason:
+        reasons.append(route_reason)
+        status = Status.FLAG
 
     validation_error = _validate_patient(patient)
     if validation_error:
@@ -2060,6 +2188,16 @@ def _check_fentanyl(order: ExtractedOrder, patient: PatientInfo) -> Decision:
             "tolerant-patient dosing."
         )
 
+    cns_matches = _check_concurrent_cns_depressants(patient)
+    if cns_matches:
+        if status == Status.PASS:
+            status = Status.FLAG
+        reasons.append(
+            f"Patient is on concurrent CNS depressant(s) ({', '.join(cns_matches)}) - combined "
+            f"with an opioid, this significantly increases respiratory depression risk. Verify "
+            f"monitoring is appropriate."
+        )
+
     if order.interval_low_hr is not None:
         redose_hr = band.min_redose_interval_min / 60
         if order.interval_low_hr < redose_hr:
@@ -2099,6 +2237,11 @@ def _check_oxycodone(order: ExtractedOrder, patient: PatientInfo) -> Decision:
         )
 
     reasons.append(rule.mandatory_disclaimer)
+
+    route_reason = _check_route_caution(order, verified_routes={"PO"})
+    if route_reason:
+        reasons.append(route_reason)
+        status = Status.FLAG
 
     validation_error = _validate_patient(patient)
     if validation_error:
@@ -2147,6 +2290,16 @@ def _check_oxycodone(order: ExtractedOrder, patient: PatientInfo) -> Decision:
         reasons.append(
             "Patient marked as opioid-tolerant - the naive-patient ceilings below may not "
             "apply. Verify against a tolerance-adjusted protocol independently."
+        )
+
+    cns_matches = _check_concurrent_cns_depressants(patient)
+    if cns_matches:
+        if status == Status.PASS:
+            status = Status.FLAG
+        reasons.append(
+            f"Patient is on concurrent CNS depressant(s) ({', '.join(cns_matches)}) - combined "
+            f"with an opioid, this significantly increases respiratory depression risk. Verify "
+            f"monitoring is appropriate."
         )
 
     if patient.age_years < 0.5:
@@ -2374,9 +2527,7 @@ def to_audit_record(decision: Decision) -> dict:
 
 
 # ============================================================
-# ALL 111 TEST CASES ACROSS 7 DRUGS
-# paracetamol(19) + ibuprofen(19) + amoxicillin(20) + loratadine(10) +
-# dexamethasone(13) + fentanyl(15) + oxycodone(15)
+# ALL 124 TEST CASES ACROSS 7 DRUGS
 # ============================================================
 
 CASES = [
@@ -2459,6 +2610,14 @@ CASES = [
     ("patient weight not provided for a child",
      "paracetamol 15mg/kg PO 6 hourly",
      PatientInfo(age_years=6), Status.FLAG),
+
+    ("IV route - flagged with specific formulation-error warning",
+     "paracetamol 15mg/kg IV 4-6 hourly",
+     PatientInfo(age_years=6, weight_kg=22), Status.FLAG),
+
+    ("PO route stated explicitly - no route flag",
+     "paracetamol 15mg/kg PO 4-6 hourly",
+     PatientInfo(age_years=6, weight_kg=22), Status.PASS),
 
 
     # ---- normal / should PASS ----
@@ -2624,6 +2783,23 @@ CASES = [
      "amoxicillin 25mg/kg PO TDS",
      PatientInfo(age_years=5), Status.FLAG),
 
+    # ---- penicillin allergy checking ----
+    ("documented penicillin allergy - blocked regardless of otherwise-safe dose",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=6, weight_kg=22, allergies=["penicillin"]), Status.BLOCK),
+
+    ("allergy phrased with extra detail - still caught via substring match",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=6, weight_kg=22, allergies=["penicillin allergy - rash as a child"]), Status.BLOCK),
+
+    ("unrelated allergy documented - does not block",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=6, weight_kg=22, allergies=["peanuts"]), Status.PASS),
+
+    ("IV route - flagged as unverified for this route",
+     "amoxicillin 25mg/kg IV TDS",
+     PatientInfo(age_years=6, weight_kg=22), Status.FLAG),
+
 
     ("standard young child (2-<6yr), 5mg",
      "loratadine 5mg PO daily", PatientInfo(age_years=4, weight_kg=16), Status.PASS),
@@ -2654,6 +2830,9 @@ CASES = [
 
     ("patient age not provided",
      "loratadine 10mg PO daily", PatientInfo(weight_kg=70), Status.FLAG),
+
+    ("IV route stated - no injectable formulation exists, flagged as likely transcription error",
+     "loratadine 10mg IV daily", PatientInfo(age_years=30, weight_kg=70), Status.FLAG),
 
 
     ("standard low-end croup dose (0.15mg/kg)",
@@ -2694,6 +2873,12 @@ CASES = [
 
     ("patient weight not provided for a child",
      "dexamethasone 0.3mg/kg PO stat", PatientInfo(age_years=5), Status.FLAG),
+
+    ("IV route - NOT flagged, oral/IV/IM treated as clinically interchangeable for this drug",
+     "dexamethasone 8mg IV stat", PatientInfo(age_years=30, weight_kg=70), Status.PASS),
+
+    ("unusual SC route - flagged as unverified",
+     "dexamethasone 8mg SC stat", PatientInfo(age_years=30, weight_kg=70), Status.FLAG),
 
 
     ("standard dose (1.5mcg/kg)",
@@ -2741,6 +2926,12 @@ CASES = [
     ("patient weight not provided",
      "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=8), Status.FLAG),
 
+    ("concurrent benzodiazepine - flagged for respiratory depression risk",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=6, weight_kg=22, concurrent_medications=["midazolam"]), Status.FLAG),
+
+    ("unrelated concurrent medication - no interaction flag",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=6, weight_kg=22, concurrent_medications=["paracetamol"]), Status.PASS),
+
 
     ("standard peds naive, low end (0.1mg/kg)",
      "oxycodone 0.1mg/kg PO 4 hourly", PatientInfo(age_years=8, weight_kg=25), Status.PASS),
@@ -2786,6 +2977,12 @@ CASES = [
 
     ("patient weight not provided for a child",
      "oxycodone 0.1mg/kg PO 4 hourly", PatientInfo(age_years=8), Status.FLAG),
+
+    ("concurrent diazepam - flagged for respiratory depression risk",
+     "oxycodone 0.1mg/kg PO 4 hourly", PatientInfo(age_years=8, weight_kg=25, concurrent_medications=["diazepam 2mg BD"]), Status.FLAG),
+
+    ("IV route - flagged, this rulebook scoped to oral immediate-release only",
+     "oxycodone 5mg IV stat", PatientInfo(age_years=40, weight_kg=75), Status.FLAG),
 
 ]
 

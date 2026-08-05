@@ -93,6 +93,23 @@ CASES = [
     ("patient weight not provided for a child",
      "amoxicillin 25mg/kg PO TDS",
      PatientInfo(age_years=5), Status.FLAG),
+
+    # ---- penicillin allergy checking ----
+    ("documented penicillin allergy - blocked regardless of otherwise-safe dose",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=6, weight_kg=22, allergies=["penicillin"]), Status.BLOCK),
+
+    ("allergy phrased with extra detail - still caught via substring match",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=6, weight_kg=22, allergies=["penicillin allergy - rash as a child"]), Status.BLOCK),
+
+    ("unrelated allergy documented - does not block",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=6, weight_kg=22, allergies=["peanuts"]), Status.PASS),
+
+    ("IV route - flagged as unverified for this route",
+     "amoxicillin 25mg/kg IV TDS",
+     PatientInfo(age_years=6, weight_kg=22), Status.FLAG),
 ]
 
 

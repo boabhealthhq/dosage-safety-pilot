@@ -17,10 +17,9 @@ Ground truth status meanings:
   BLOCK = genuinely unsafe as written, should not proceed
 """
 
-import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, '..')
 from dosage_safety import PatientInfo, Status
 
 # (id, description, order_text, patient, ground_truth, ground_truth_reasoning)
@@ -70,7 +69,10 @@ CASES = [
 
     ("P11", "IV route, at the cap boundary",
      "paracetamol 1000mg IV q6h", PatientInfo(age_years=38, weight_kg=68),
-     Status.PASS, "1000mg q6h=4000mg/day, exactly at the general adult ceiling (route-specific IV nuance is a known, documented limitation, not scored as an error here)"),
+     Status.FLAG, "1000mg q6h=4000mg/day, exactly at the general adult ceiling. Ground truth "
+     "updated (was PASS) after route-caution checking was added - IV paracetamol dosing errors "
+     "are a real, documented category of harm, and the tool now correctly flags that IV wasn't "
+     "separately verified, rather than silently treating it the same as oral."),
 
     ("P12", "dangerous dose disguised in casual conversational phrasing",
      "Since the fever hasn't come down, let's try upping the panadol to 20 mg per kilo every four hours for now",

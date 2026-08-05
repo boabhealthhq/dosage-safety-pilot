@@ -52,6 +52,12 @@ CASES = [
 
     ("patient weight not provided for a child",
      "oxycodone 0.1mg/kg PO 4 hourly", PatientInfo(age_years=8), Status.FLAG),
+
+    ("concurrent diazepam - flagged for respiratory depression risk",
+     "oxycodone 0.1mg/kg PO 4 hourly", PatientInfo(age_years=8, weight_kg=25, concurrent_medications=["diazepam 2mg BD"]), Status.FLAG),
+
+    ("IV route - flagged, this rulebook scoped to oral immediate-release only",
+     "oxycodone 5mg IV stat", PatientInfo(age_years=40, weight_kg=75), Status.FLAG),
 ]
 
 

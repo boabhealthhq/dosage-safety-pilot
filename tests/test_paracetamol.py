@@ -94,6 +94,14 @@ CASES = [
     ("patient weight not provided for a child",
      "paracetamol 15mg/kg PO 6 hourly",
      PatientInfo(age_years=6), Status.FLAG),
+
+    ("IV route - flagged with specific formulation-error warning",
+     "paracetamol 15mg/kg IV 4-6 hourly",
+     PatientInfo(age_years=6, weight_kg=22), Status.FLAG),
+
+    ("PO route stated explicitly - no route flag",
+     "paracetamol 15mg/kg PO 4-6 hourly",
+     PatientInfo(age_years=6, weight_kg=22), Status.PASS),
 ]
 
 

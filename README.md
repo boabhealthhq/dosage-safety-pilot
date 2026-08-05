@@ -20,14 +20,15 @@ No dependencies beyond the Python 3 standard library.
 
 ```bash
 python3 demo.py                       # see the full pipeline on sample text (all 7 drugs)
-python3 tests/test_paracetamol.py     # 19 cases
+python3 tests/test_paracetamol.py     # 21 cases
 python3 tests/test_ibuprofen.py       # 19 cases
-python3 tests/test_amoxicillin.py     # 20 cases
-python3 tests/test_loratadine.py      # 10 cases
-python3 tests/test_dexamethasone.py   # 13 cases
-python3 tests/test_fentanyl.py        # 15 cases
-python3 tests/test_oxycodone.py       # 15 cases
+python3 tests/test_amoxicillin.py     # 24 cases
+python3 tests/test_loratadine.py      # 11 cases
+python3 tests/test_dexamethasone.py   # 15 cases
+python3 tests/test_fentanyl.py        # 17 cases
+python3 tests/test_oxycodone.py       # 17 cases
 ```
+Total: 124 cases across all 7 drugs.
 
 ## How it works
 
@@ -99,6 +100,71 @@ is exactly the false-positive problem this whole project exists to avoid,
 so v0 deliberately under-checks range orders on the daily-total dimension
 and relies on the minimum-interval and per-dose checks instead, which don't
 have this ambiguity.
+
+## v0.9 - three new safety checks: route caution, allergy checking, opioid interactions
+Prompted directly by the "Known limitations" section of the clinical review
+document sent to a pharmacist - three of the five listed gaps were
+genuinely achievable now, so they got built rather than left as a
+permanent disclaimer.
+
+1. **Route caution.** `order.route` was already captured for every drug
+   but only ever *used* by fentanyl (scoped to intranasal). Now checked
+   for the other six too - but deliberately NOT with one blanket rule,
+   since route sensitivity genuinely differs by drug:
+   - **Paracetamol**: IV gets a specific, stronger warning - IV
+     paracetamol formulation-specific dosing errors (mg/mL mix-ups) are a
+     real, documented category of harm, distinct from a generic
+     "unverified route" note.
+   - **Loratadine**: any non-oral route is flagged as a likely
+     transcription error, not just a dosing question - no injectable
+     form of this drug exists at all.
+   - **Dexamethasone**: deliberately given a *wider* verified set
+     (PO/IV/IM) rather than the same treatment as the others - oral, IV,
+     and IM dexamethasone are commonly treated as clinically
+     interchangeable in real practice, and flagging all three would have
+     created false-positive noise on legitimate, common orders. Only
+     genuinely unusual routes (e.g. SC) get flagged.
+   - Ibuprofen, amoxicillin, oxycodone: generic "not verified for this
+     route" caution, no drug-specific special-casing needed.
+
+2. **Penicillin-class allergy checking**, for amoxicillin. Deliberately
+   narrow - not a general allergy system, just the clearest, highest-value
+   single case: a documented penicillin/amoxicillin allergy now hard-BLOCKs,
+   checked before anything else (including before checking if a dose was
+   even stated), since an allergy is an absolute contraindication
+   regardless of dose correctness. Matched via permissive substring
+   checking, so "penicillin allergy - rash as a child" still matches
+   "penicillin".
+
+3. **Opioid + CNS-depressant interaction flag**, for fentanyl and
+   oxycodone only. Not general drug-interaction checking - a narrow,
+   scoped check for exactly the combination that matters most for opioid
+   respiratory-depression risk: benzodiazepines, other opioids, and
+   alcohol. A match FLAGs (not BLOCKs, since concurrent use can be
+   clinically appropriate with proper monitoring) and names exactly which
+   concurrent medication triggered it.
+
+**New `PatientInfo` fields**: `allergies` and `concurrent_medications`,
+both optional free-text lists, both `None` by default (ignored entirely
+unless a caller populates them).
+
+**A real regression found and fixed during this round, not just a
+number that happened to match**: the independent evaluation score
+initially dropped to 45/51 after these changes. Root cause: eval case P11
+("paracetamol 1000mg IV q6h") had its ground truth deliberately set to
+PASS when it was originally written, with an explicit note that IV-route
+blindness was "a known, documented limitation, not scored as an error" at
+the time. Route caution now correctly catches this - the tool got *more*
+correct, and the eval's ground truth was updated to match (now FLAG),
+not the other way around. Score returned to 46/51 (90%) after the
+correction - the same documented baseline as before, confirmed by
+checking every other route-mentioning eval case for the same issue (none
+found).
+
+124 dev cases now (was 111) - 13 new cases added directly testing all
+three features, including the important negative cases (dexamethasone's
+IV/PO interchangeability correctly NOT flagged; non-opioid drugs
+correctly NOT checked for CNS interactions).
 
 ## v0.7 - four new drugs, including a critical multi-drug extraction bug found in the process
 Added **loratadine**, **dexamethasone**, **intranasal fentanyl**, and

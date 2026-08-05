@@ -37,6 +37,9 @@ CASES = [
 
     ("patient age not provided",
      "loratadine 10mg PO daily", PatientInfo(weight_kg=70), Status.FLAG),
+
+    ("IV route stated - no injectable formulation exists, flagged as likely transcription error",
+     "loratadine 10mg IV daily", PatientInfo(age_years=30, weight_kg=70), Status.FLAG),
 ]
 
 
