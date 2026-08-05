@@ -23,15 +23,16 @@ should mean "nothing meaningful found" or "flagged as unverifiable," never
 "the process falls over."
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from dosage_safety import check_order, PatientInfo, Decision, Status  # noqa: E402
+from dosage_safety import Decision, PatientInfo, Status, check_order  # noqa: E402
 
 try:
-    from hypothesis import given, strategies as st, settings, HealthCheck
+    from hypothesis import HealthCheck, given, settings
+    from hypothesis import strategies as st
 except ImportError:
     print("hypothesis not installed - run: pip install hypothesis")
     sys.exit(1)

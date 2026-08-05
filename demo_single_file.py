@@ -14,20 +14,18 @@ HOW TO USE:
 3. Run: python demo.py
 """
 
-import re
-import json
 import hashlib
+import json
+import re
 from dataclasses import dataclass, field
-from enum import Enum
 from datetime import datetime, timezone
-from typing import Optional, Protocol
-
+from enum import Enum
+from typing import Protocol
 
 # ============================================================
 # MODELS
 # ============================================================
 
-from enum import Enum
 
 
 class Status(str, Enum):
@@ -40,15 +38,15 @@ class Status(str, Enum):
 class PatientInfo:
     """Structured patient facts, supplied directly by the calling product -
     never extracted from the order text."""
-    age_years: Optional[float] = None   # fractional allowed, e.g. 4/365 for a 4-day-old neonate
-    weight_kg: Optional[float] = None
-    height_cm: Optional[float] = None
-    sex: Optional[str] = None           # "M" / "F" / None
+    age_years: float | None = None   # fractional allowed, e.g. 4/365 for a 4-day-old neonate
+    weight_kg: float | None = None
+    height_cm: float | None = None
+    sex: str | None = None           # "M" / "F" / None
     # Only meaningful for opioids (fentanyl, oxycodone) - ignored entirely
     # by every other drug's check. None means "not stated" - opioid checks
     # treat that conservatively as opioid-naive, since assuming tolerance
     # without confirmation is the more dangerous direction to guess wrong in.
-    opioid_tolerant: Optional[bool] = None
+    opioid_tolerant: bool | None = None
 
 
 @dataclass
@@ -57,15 +55,15 @@ class ExtractedOrder:
     raw_segment: str
     drug_name_raw: str          # exact alias text as it appeared, e.g. "Panadol" - for audit/display
     drug_canonical: str         # normalized key used to look up the rulebook, e.g. "paracetamol"
-    dose_value: Optional[float]
-    dose_unit: Optional[str]            # "mg", "g", "mg/kg"
-    interval_low_hr: Optional[float]
-    interval_high_hr: Optional[float]
-    route: Optional[str] = None
+    dose_value: float | None
+    dose_unit: str | None            # "mg", "g", "mg/kg"
+    interval_low_hr: float | None
+    interval_high_hr: float | None
+    route: str | None = None
     prn: bool = False
     is_fuzzy_match: bool = False        # True if drug name matched via typo-tolerance, not exactly
     dose_is_range: bool = False         # True if the order stated a range (e.g. "500-1000mg")
-    dose_range_low: Optional[float] = None  # the lower bound, when dose_is_range is True
+    dose_range_low: float | None = None  # the lower bound, when dose_is_range is True
     dose_is_daily_total: bool = False   # True if the number is a DAILY total, not a per-dose figure
 
 
@@ -82,10 +80,10 @@ class Decision:
     """Output of the Decide step - what actually gets shown to a human."""
     status: Status
     reasons: list[str] = field(default_factory=list)
-    rule_source: Optional[str] = None
-    drug: Optional[str] = None
-    extracted: Optional[ExtractedOrder] = None
-    patient: Optional[PatientInfo] = None
+    rule_source: str | None = None
+    drug: str | None = None
+    extracted: ExtractedOrder | None = None
+    patient: PatientInfo | None = None
 
 
 # ============================================================
@@ -102,11 +100,11 @@ class ParacetamolWeightBand:
     min_interval_hr: float
     max_interval_hr: float
     max_mg_per_kg_day: float
-    dose_cap_mg: Optional[float] = None
+    dose_cap_mg: float | None = None
     # up to here is standard - flag as "verify", don't hard-block, since
     # short-term inpatient dosing legitimately runs higher than the
     # standard max_mg_per_kg_day
-    verify_mg_per_kg_day: Optional[float] = None
+    verify_mg_per_kg_day: float | None = None
 
 
 @dataclass(frozen=True)
@@ -573,7 +571,6 @@ OXYCODONE = OxycodoneRule(
 # EXTRACT
 # ============================================================
 
-import re
 
 # v0: paracetamol only. Add new aliases here as new drugs are added to the rulebook.
 # "pcm" added as a common real-world shorthand, not a typo - kept separate from
@@ -2356,9 +2353,6 @@ def check_order(text: str, patient: PatientInfo) -> list[Decision]:
 # LOG
 # ============================================================
 
-import hashlib
-import json
-from datetime import datetime, timezone
 
 
 

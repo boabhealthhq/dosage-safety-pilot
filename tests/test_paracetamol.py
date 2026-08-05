@@ -7,12 +7,12 @@ Run from the project root:
     python3 tests/test_paracetamol.py
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from dosage_safety import check_order, PatientInfo, Status  # noqa: E402
+from dosage_safety import PatientInfo, Status, check_order  # noqa: E402
 
 # Each case: (label, order_text, patient, expected_status)
 CASES = [

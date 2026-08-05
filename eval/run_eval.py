@@ -5,11 +5,13 @@ specific "no decision produced" category, since that's a different failure
 mode from PASS (silent miss vs an active, wrong judgement).
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from dosage_safety import check_order, PatientInfo, Status
 from eval_cases import CASES
+
+from dosage_safety import Status, check_order
 
 SEVERITY = {Status.PASS: 0, Status.FLAG: 1, Status.BLOCK: 2}
 

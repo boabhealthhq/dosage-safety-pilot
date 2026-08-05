@@ -13,9 +13,9 @@ defensible and what a developer evaluating this tool will check first.
 from typing import Protocol
 
 from .extract import extract_orders
+from .models import Decision, ExtractedOrder, PatientInfo, Status
 from .normalize import normalize_drug
-from .rulebook import PARACETAMOL, IBUPROFEN, AMOXICILLIN, LORATADINE, DEXAMETHASONE, FENTANYL, OXYCODONE
-from .models import PatientInfo, Decision, Status, ExtractedOrder
+from .rulebook import AMOXICILLIN, DEXAMETHASONE, FENTANYL, IBUPROFEN, LORATADINE, OXYCODONE, PARACETAMOL
 
 NEONATE_MAX_AGE_YEARS = 1 / 12  # 1 month
 PAEDIATRIC_MAX_AGE_YEARS = 18

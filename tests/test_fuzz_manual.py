@@ -13,14 +13,14 @@ category of bug that matters most for a safety tool: does malformed input
 ever crash the process instead of failing safely.
 """
 
+import os
 import random
 import string
 import sys
-import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from dosage_safety import check_order, PatientInfo, Decision  # noqa: E402
+from dosage_safety import Decision, PatientInfo, check_order  # noqa: E402
 
 random.seed(42)  # reproducible run
 

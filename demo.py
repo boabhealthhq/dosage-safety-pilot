@@ -6,7 +6,8 @@ Run: python3 demo.py
 """
 
 import json
-from dosage_safety import check_order, PatientInfo, to_audit_record
+
+from dosage_safety import PatientInfo, check_order, to_audit_record
 
 # Pretend this came out of a clinical-facing AI product.
 ai_generated_text = """

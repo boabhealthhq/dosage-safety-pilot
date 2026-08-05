@@ -28,6 +28,7 @@ pick up a different drug's numbers (fixing 2).
 """
 
 import re
+
 from .models import ExtractedOrder
 
 # v0: paracetamol only. Add new aliases here as new drugs are added to the rulebook.

@@ -17,10 +17,11 @@ Ground truth status meanings:
   BLOCK = genuinely unsafe as written, should not proceed
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from dosage_safety import check_order, PatientInfo, Status
+from dosage_safety import PatientInfo, Status
 
 # (id, description, order_text, patient, ground_truth, ground_truth_reasoning)
 CASES = [

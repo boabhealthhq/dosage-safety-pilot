@@ -25,8 +25,6 @@ this in anything beyond a synthetic-data pilot.
 """
 
 from dataclasses import dataclass
-from typing import Optional
-
 
 # ============================================================
 # PARACETAMOL
@@ -38,11 +36,11 @@ class ParacetamolWeightBand:
     min_interval_hr: float
     max_interval_hr: float
     max_mg_per_kg_day: float
-    dose_cap_mg: Optional[float] = None
+    dose_cap_mg: float | None = None
     # up to here is standard - flag as "verify", don't hard-block, since
     # short-term inpatient dosing legitimately runs higher than the
     # standard max_mg_per_kg_day
-    verify_mg_per_kg_day: Optional[float] = None
+    verify_mg_per_kg_day: float | None = None
 
 
 @dataclass(frozen=True)

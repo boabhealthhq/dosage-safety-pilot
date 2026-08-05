@@ -3,12 +3,12 @@ Ibuprofen test suite. Same stdlib-only, no-pytest pattern as paracetamol's -
 run with: python3 tests/test_ibuprofen.py
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from dosage_safety import check_order, PatientInfo, Status  # noqa: E402
+from dosage_safety import PatientInfo, Status, check_order  # noqa: E402
 
 CASES = [
     # ---- normal / should PASS ----
