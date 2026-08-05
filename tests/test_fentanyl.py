@@ -52,6 +52,12 @@ CASES = [
 
     ("patient weight not provided",
      "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=8), Status.FLAG),
+
+    ("concurrent benzodiazepine - flagged for respiratory depression risk",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=6, weight_kg=22, concurrent_medications=["midazolam"]), Status.FLAG),
+
+    ("unrelated concurrent medication - no interaction flag",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=6, weight_kg=22, concurrent_medications=["paracetamol"]), Status.PASS),
 ]
 
 

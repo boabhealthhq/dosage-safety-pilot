@@ -29,6 +29,19 @@ class PatientInfo:
     # treat that conservatively as opioid-naive, since assuming tolerance
     # without confirmation is the more dangerous direction to guess wrong in.
     opioid_tolerant: bool | None = None
+    # Free-text allergy list, e.g. ["penicillin"]. Checked narrowly -
+    # currently only amoxicillin cross-checks this (penicillin-class
+    # allergy), not a general allergy system. Matched case-insensitively
+    # as a substring, so "penicillin" matches "penicillin allergy (rash)"
+    # too - deliberately permissive, since missing a real allergy is far
+    # worse than an unnecessary flag.
+    allergies: list | None = None
+    # Free-text list of other medications the patient is currently on,
+    # e.g. ["diazepam"]. Checked narrowly - currently only the two opioids
+    # (fentanyl, oxycodone) cross-check this, for CNS depressants
+    # specifically (benzodiazepines, other opioids, alcohol) - not a
+    # general drug-interaction system.
+    concurrent_medications: list | None = None
 
 
 @dataclass

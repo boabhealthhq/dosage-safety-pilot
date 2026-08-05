@@ -13,7 +13,7 @@ on:
 jobs:
 
   # ------------------------------------------------------------------
-  # The 111 hand-written dev test cases, across three Python versions to
+  # The 124 hand-written dev test cases, across three Python versions to
   # catch any version-specific surprise early. One test file per step so
   # a failure points at exactly which drug's suite broke, not a buried
   # line in a loop's output.
@@ -29,19 +29,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Paracetamol (19 cases)
+      - name: Paracetamol (21 cases)
         run: python tests/test_paracetamol.py
       - name: Ibuprofen (19 cases)
         run: python tests/test_ibuprofen.py
-      - name: Amoxicillin (20 cases)
+      - name: Amoxicillin (24 cases)
         run: python tests/test_amoxicillin.py
-      - name: Loratadine (10 cases)
+      - name: Loratadine (11 cases)
         run: python tests/test_loratadine.py
-      - name: Dexamethasone (13 cases)
+      - name: Dexamethasone (15 cases)
         run: python tests/test_dexamethasone.py
-      - name: Fentanyl (15 cases)
+      - name: Fentanyl (17 cases)
         run: python tests/test_fentanyl.py
-      - name: Oxycodone (15 cases)
+      - name: Oxycodone (17 cases)
         run: python tests/test_oxycodone.py
 
   # ------------------------------------------------------------------

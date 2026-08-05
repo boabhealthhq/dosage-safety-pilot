@@ -46,6 +46,12 @@ CASES = [
 
     ("patient weight not provided for a child",
      "dexamethasone 0.3mg/kg PO stat", PatientInfo(age_years=5), Status.FLAG),
+
+    ("IV route - NOT flagged, oral/IV/IM treated as clinically interchangeable for this drug",
+     "dexamethasone 8mg IV stat", PatientInfo(age_years=30, weight_kg=70), Status.PASS),
+
+    ("unusual SC route - flagged as unverified",
+     "dexamethasone 8mg SC stat", PatientInfo(age_years=30, weight_kg=70), Status.FLAG),
 ]
 
 
