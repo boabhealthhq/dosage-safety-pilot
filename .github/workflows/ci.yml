@@ -1,0 +1,115 @@
+name: CI
+
+# Runs automatically on every push and every pull request. This is the
+# first place several of these checks (ruff, mypy, the real hypothesis
+# fuzz test) actually get to RUN, rather than being configured but
+# unexecuted - the build environment this project was developed in had no
+# network access to install any of them. GitHub's runners do.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+
+  # ------------------------------------------------------------------
+  # The 111 hand-written dev test cases, across three Python versions to
+  # catch any version-specific surprise early. One test file per step so
+  # a failure points at exactly which drug's suite broke, not a buried
+  # line in a loop's output.
+  # ------------------------------------------------------------------
+  dev-test-suites:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Paracetamol (19 cases)
+        run: python tests/test_paracetamol.py
+      - name: Ibuprofen (19 cases)
+        run: python tests/test_ibuprofen.py
+      - name: Amoxicillin (20 cases)
+        run: python tests/test_amoxicillin.py
+      - name: Loratadine (10 cases)
+        run: python tests/test_loratadine.py
+      - name: Dexamethasone (13 cases)
+        run: python tests/test_dexamethasone.py
+      - name: Fentanyl (15 cases)
+        run: python tests/test_fentanyl.py
+      - name: Oxycodone (15 cases)
+        run: python tests/test_oxycodone.py
+
+  # ------------------------------------------------------------------
+  # Independent evaluation - ground truth set BEFORE running anything
+  # through the tool, to avoid validating it against itself. Fails only
+  # if the score drops below the documented 46/51 baseline (a real
+  # regression), not simply for being under 100% - two remaining misses
+  # are known, documented limitations, not bugs to chase to zero.
+  # ------------------------------------------------------------------
+  independent-evaluation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run independent 51-case evaluation
+        run: python eval/run_eval.py
+
+  # ------------------------------------------------------------------
+  # Hand-rolled fuzz test (no dependencies) plus the real hypothesis
+  # property-based test - the latter could only ever be configured, not
+  # executed, in the original build environment.
+  # ------------------------------------------------------------------
+  fuzz-testing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Hand-rolled fuzz test (3000 randomized cases)
+        run: python tests/test_fuzz_manual.py
+      - name: Install hypothesis
+        run: pip install hypothesis
+      - name: Property-based fuzz test (hypothesis)
+        run: python tests/test_fuzz_hypothesis.py
+
+  # ------------------------------------------------------------------
+  # Linting and type-checking - configured in pyproject.toml but never
+  # actually run anywhere until now.
+  # ------------------------------------------------------------------
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install ruff and mypy
+        run: pip install ruff mypy
+      - name: Run ruff
+        run: ruff check .
+        continue-on-error: true  # auto-fixable issues fixed; remainder reported, not blocking, until a dedicated pass is done
+      - name: Run mypy
+        run: mypy dosage_safety/
+        continue-on-error: true  # not yet fully clean - see pyproject.toml notes; reporting, not blocking, until a dedicated pass is done
+
+  # ------------------------------------------------------------------
+  # End-to-end smoke test - the demo script itself, on the exact sample
+  # text a first-time reader would see.
+  # ------------------------------------------------------------------
+  demo-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run demo.py end to end
+        run: python demo.py

@@ -1,33 +1,25 @@
 """
-Dosage Safety Pilot v0 - single-file version
-(paracetamol, ibuprofen, amoxicillin, loratadine, dexamethasone,
-fentanyl, oxycodone). v0.7 - four new drugs added, including a critical
-multi-drug extraction bug found and fixed by testing all 7 drugs together
-in one sentence (see README v0.7 notes and FMEA.md row 0). Fentanyl and
-oxycodone use a deliberately more conservative design than the other
-five drugs, given the stakes of an opioid dosing error - see the
-FENTANYL/OXYCODONE rule comments in the RULEBOOK section below.
+Dosage Safety Pilot v0 - full test suite, single-file version
+(7 drugs: paracetamol, ibuprofen, amoxicillin, loratadine, dexamethasone,
+fentanyl, oxycodone). v0.7 - same engine as demo.py. 111 dev cases total.
 
 HOW TO USE:
-1. Save this whole file as demo.py (replacing the old one)
-2. Open a command window in the same folder you saved it to
-3. Run: python demo.py
+Save this as test_all.py, then: python test_all.py
 """
 
-import re
-import json
 import hashlib
+import json
+import re
+import sys
 from dataclasses import dataclass, field
-from enum import Enum
 from datetime import datetime, timezone
-from typing import Optional, Protocol
-
+from enum import Enum
+from typing import Protocol
 
 # ============================================================
 # MODELS
 # ============================================================
 
-from enum import Enum
 
 
 class Status(str, Enum):
@@ -40,15 +32,15 @@ class Status(str, Enum):
 class PatientInfo:
     """Structured patient facts, supplied directly by the calling product -
     never extracted from the order text."""
-    age_years: Optional[float] = None   # fractional allowed, e.g. 4/365 for a 4-day-old neonate
-    weight_kg: Optional[float] = None
-    height_cm: Optional[float] = None
-    sex: Optional[str] = None           # "M" / "F" / None
+    age_years: float | None = None   # fractional allowed, e.g. 4/365 for a 4-day-old neonate
+    weight_kg: float | None = None
+    height_cm: float | None = None
+    sex: str | None = None           # "M" / "F" / None
     # Only meaningful for opioids (fentanyl, oxycodone) - ignored entirely
     # by every other drug's check. None means "not stated" - opioid checks
     # treat that conservatively as opioid-naive, since assuming tolerance
     # without confirmation is the more dangerous direction to guess wrong in.
-    opioid_tolerant: Optional[bool] = None
+    opioid_tolerant: bool | None = None
 
 
 @dataclass
@@ -57,15 +49,15 @@ class ExtractedOrder:
     raw_segment: str
     drug_name_raw: str          # exact alias text as it appeared, e.g. "Panadol" - for audit/display
     drug_canonical: str         # normalized key used to look up the rulebook, e.g. "paracetamol"
-    dose_value: Optional[float]
-    dose_unit: Optional[str]            # "mg", "g", "mg/kg"
-    interval_low_hr: Optional[float]
-    interval_high_hr: Optional[float]
-    route: Optional[str] = None
+    dose_value: float | None
+    dose_unit: str | None            # "mg", "g", "mg/kg"
+    interval_low_hr: float | None
+    interval_high_hr: float | None
+    route: str | None = None
     prn: bool = False
     is_fuzzy_match: bool = False        # True if drug name matched via typo-tolerance, not exactly
     dose_is_range: bool = False         # True if the order stated a range (e.g. "500-1000mg")
-    dose_range_low: Optional[float] = None  # the lower bound, when dose_is_range is True
+    dose_range_low: float | None = None  # the lower bound, when dose_is_range is True
     dose_is_daily_total: bool = False   # True if the number is a DAILY total, not a per-dose figure
 
 
@@ -82,10 +74,10 @@ class Decision:
     """Output of the Decide step - what actually gets shown to a human."""
     status: Status
     reasons: list[str] = field(default_factory=list)
-    rule_source: Optional[str] = None
-    drug: Optional[str] = None
-    extracted: Optional[ExtractedOrder] = None
-    patient: Optional[PatientInfo] = None
+    rule_source: str | None = None
+    drug: str | None = None
+    extracted: ExtractedOrder | None = None
+    patient: PatientInfo | None = None
 
 
 # ============================================================
@@ -102,11 +94,11 @@ class ParacetamolWeightBand:
     min_interval_hr: float
     max_interval_hr: float
     max_mg_per_kg_day: float
-    dose_cap_mg: Optional[float] = None
+    dose_cap_mg: float | None = None
     # up to here is standard - flag as "verify", don't hard-block, since
     # short-term inpatient dosing legitimately runs higher than the
     # standard max_mg_per_kg_day
-    verify_mg_per_kg_day: Optional[float] = None
+    verify_mg_per_kg_day: float | None = None
 
 
 @dataclass(frozen=True)
@@ -573,7 +565,6 @@ OXYCODONE = OxycodoneRule(
 # EXTRACT
 # ============================================================
 
-import re
 
 # v0: paracetamol only. Add new aliases here as new drugs are added to the rulebook.
 # "pcm" added as a common real-world shorthand, not a typo - kept separate from
@@ -2356,9 +2347,6 @@ def check_order(text: str, patient: PatientInfo) -> list[Decision]:
 # LOG
 # ============================================================
 
-import hashlib
-import json
-from datetime import datetime, timezone
 
 
 
@@ -2383,32 +2371,447 @@ def to_audit_record(decision: Decision) -> dict:
     return record
 
 
+
+
 # ============================================================
-# DEMO
+# ALL 111 TEST CASES ACROSS 7 DRUGS
+# paracetamol(19) + ibuprofen(19) + amoxicillin(20) + loratadine(10) +
+# dexamethasone(13) + fentanyl(15) + oxycodone(15)
 # ============================================================
+
+CASES = [
+
+    # ---- normal / should PASS (the "do NOT flag" list) ----
+    ("standard peds 15mg/kg 4-6hrly PRN",
+     "paracetamol 15mg/kg PO 4-6 hourly PRN",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("standard peds fixed dose in mg, within band",
+     "paracetamol 300mg PO 4-6 hourly PRN",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("standard adult 1g QID",
+     "paracetamol 1g PO QID",
+     PatientInfo(age_years=35, weight_kg=75), Status.PASS),
+
+    ("standard adult 500mg 6hourly",
+     "panadol 500mg PO 6 hourly",
+     PatientInfo(age_years=40, weight_kg=68), Status.PASS),
+
+    ("drug mentioned with no dose stated",
+     "continue paracetamol as charted, otherwise stable",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("brand name alias resolves correctly (panadol)",
+     "panadol 15mg/kg PO 4-6 hourly PRN",
+     PatientInfo(age_years=2, weight_kg=12), Status.PASS),
+
+    ("small neonate at correct 15mg/kg, 8hrly PRN",
+     "paracetamol 15mg/kg PO 8 hourly PRN",
+     PatientInfo(age_years=0.03, weight_kg=3.5), Status.PASS),
+
+    ("adult underweight patient within reduced cap",
+     "paracetamol 500mg PO QID",
+     PatientInfo(age_years=70, weight_kg=45), Status.PASS),
+
+    # ---- dangerous / should FLAG or BLOCK ----
+    ("single peds dose exceeds 1g hard cap",
+     "paracetamol 1200mg PO 6 hourly",
+     PatientInfo(age_years=10, weight_kg=30), Status.BLOCK),
+
+    ("peds dosing interval below 4hr minimum",
+     "paracetamol 300mg PO 3 hourly",
+     PatientInfo(age_years=5, weight_kg=20), Status.BLOCK),
+
+    ("peds fixed frequent dosing pushes daily total over standard max",
+     "paracetamol 15mg/kg PO 4 hourly",
+     PatientInfo(age_years=5, weight_kg=20), Status.FLAG),
+
+    ("adult daily total exceeds 4g/day cap",
+     "paracetamol 1g PO 4 hourly",
+     PatientInfo(age_years=30, weight_kg=80), Status.BLOCK),
+
+    ("adult <50kg exceeds reduced 3g/day cap",
+     "paracetamol 1g PO 6 hourly",
+     PatientInfo(age_years=70, weight_kg=45), Status.BLOCK),
+
+    ("neonate dose exceeds weight-based calculation and daily ceiling",
+     "paracetamol 100mg PO 8 hourly",
+     PatientInfo(age_years=0.03, weight_kg=3), Status.BLOCK),
+
+    ("mg/kg dose rate above standard, fixed frequency pushes past verify ceiling",
+     "paracetamol 25mg/kg PO 6 hourly",
+     PatientInfo(age_years=6, weight_kg=22), Status.BLOCK),
+
+    ("mg/kg dose rate modestly above standard, single dose only (no frequency stated)",
+     "paracetamol 18mg/kg PO",
+     PatientInfo(age_years=6, weight_kg=22), Status.FLAG),
+
+    ("peds interval well below minimum (2 hourly)",
+     "paracetamol 15mg/kg PO 2 hourly",
+     PatientInfo(age_years=8, weight_kg=25), Status.BLOCK),
+
+    # ---- missing-input handling (should FLAG, not silently pass) ----
+    ("patient age not provided",
+     "paracetamol 500mg PO QID",
+     PatientInfo(weight_kg=70), Status.FLAG),
+
+    ("patient weight not provided for a child",
+     "paracetamol 15mg/kg PO 6 hourly",
+     PatientInfo(age_years=6), Status.FLAG),
+
+
+    # ---- normal / should PASS ----
+    ("standard peds mg/kg within range (8mg/kg), PRN range interval",
+     "ibuprofen 8mg/kg PO 6-8 hourly PRN",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("standard peds at low end of range (5mg/kg)",
+     "ibuprofen 5mg/kg PO 6-8 hourly PRN",
+     PatientInfo(age_years=4, weight_kg=16), Status.PASS),
+
+    ("standard peds at top of range exactly (10mg/kg)",
+     "ibuprofen 10mg/kg PO 6-8 hourly PRN",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("brand name alias resolves correctly (nurofen)",
+     "nurofen 5mg/kg PO 6-8 hourly PRN",
+     PatientInfo(age_years=4, weight_kg=16), Status.PASS),
+
+    ("peds fixed mg dose within weight-based range",
+     "ibuprofen 160mg PO 6-8 hourly PRN",
+     PatientInfo(age_years=6, weight_kg=20), Status.PASS),
+
+    ("adult standard 200mg 6hourly - 800mg/day, under OTC ceiling",
+     "ibuprofen 200mg PO 6 hourly",
+     PatientInfo(age_years=35, weight_kg=75), Status.PASS),
+
+    ("adult 400mg TDS - exactly at 1200mg/day OTC ceiling, not over",
+     "ibuprofen 400mg PO TDS",
+     PatientInfo(age_years=40, weight_kg=80), Status.PASS),
+
+    ("drug mentioned with no dose stated",
+     "continue ibuprofen as charted, otherwise stable",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    # ---- dangerous / should FLAG or BLOCK ----
+    ("peds single dose exceeds 400mg hard cap",
+     "ibuprofen 500mg PO 6 hourly",
+     PatientInfo(age_years=12, weight_kg=45), Status.BLOCK),
+
+    ("peds dosing interval below 6hr minimum",
+     "ibuprofen 8mg/kg PO 4 hourly",
+     PatientInfo(age_years=8, weight_kg=25), Status.BLOCK),
+
+    ("peds daily total exceeds effective per-kg ceiling (lower than absolute)",
+     "ibuprofen 380mg PO 6 hourly",
+     PatientInfo(age_years=13, weight_kg=35), Status.BLOCK),
+
+    ("under 3 months - avoid without clinician review",
+     "ibuprofen 5mg/kg PO 8 hourly PRN",
+     PatientInfo(age_years=0.1, weight_kg=5), Status.FLAG),
+
+    ("mg/kg rate above standard range, PRN interval so daily-total not computed",
+     "ibuprofen 15mg/kg PO 6-8 hourly PRN",
+     PatientInfo(age_years=5, weight_kg=20), Status.FLAG),
+
+    ("adult single dose over 400mg, no frequency stated",
+     "ibuprofen 600mg PO",
+     PatientInfo(age_years=35, weight_kg=75), Status.FLAG),
+
+    ("adult daily total exceeds OTC ceiling but not prescription ceiling",
+     "ibuprofen 400mg PO 6 hourly",
+     PatientInfo(age_years=35, weight_kg=75), Status.FLAG),
+
+    ("adult daily total exceeds even prescription-strength ceiling",
+     "ibuprofen 800mg PO 4 hourly",
+     PatientInfo(age_years=35, weight_kg=75), Status.BLOCK),
+
+    ("misspelled drug name, genuinely dangerous dose - must not go silent",
+     "ibuprofn 500mg PO 6 hourly",
+     PatientInfo(age_years=12, weight_kg=45), Status.BLOCK),
+
+    # ---- missing-input handling ----
+    ("patient age not provided",
+     "ibuprofen 5mg/kg PO 6-8 hourly PRN",
+     PatientInfo(weight_kg=20), Status.FLAG),
+
+    ("patient weight not provided for a child",
+     "ibuprofen 5mg/kg PO 6-8 hourly PRN",
+     PatientInfo(age_years=5), Status.FLAG),
+
+
+    # ---- normal / should PASS - deliberately wide, spanning standard through high-dose ----
+    ("standard low-end peds (25mg/kg TDS = 75mg/kg/day)",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("high-dose peds within legitimate range (40mg/kg BD = 80mg/kg/day)",
+     "amoxicillin 40mg/kg PO BD",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("high-dose peds right at the ceiling (45mg/kg BD = 90mg/kg/day, not over)",
+     "amoxicillin 45mg/kg PO BD",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("AU spelling variant (amoxycillin)",
+     "amoxycillin 500mg PO TDS",
+     PatientInfo(age_years=30, weight_kg=70), Status.PASS),
+
+    ("adult standard 500mg TDS",
+     "amoxicillin 500mg PO TDS",
+     PatientInfo(age_years=40, weight_kg=75), Status.PASS),
+
+    ("adult higher standard dose 1g BD - within range, under absolute cap",
+     "amoxicillin 1000mg PO BD",
+     PatientInfo(age_years=40, weight_kg=75), Status.PASS),
+
+    ("infant under 3mo standard reduced dosing (10mg/kg BD = 20mg/kg/day)",
+     "amoxicillin 10mg/kg PO BD",
+     PatientInfo(age_years=0.1, weight_kg=5), Status.PASS),
+
+    ("drug mentioned with no dose stated",
+     "continue amoxicillin as charted, otherwise stable",
+     PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    # ---- dangerous / should FLAG or BLOCK ----
+    ("peds single dose exceeds 2g absolute cap",
+     "amoxicillin 2500mg PO TDS",
+     PatientInfo(age_years=12, weight_kg=50), Status.BLOCK),
+
+    ("peds daily total blows past both per-dose and absolute daily cap",
+     "amoxicillin 40mg/kg PO TDS",
+     PatientInfo(age_years=15, weight_kg=60), Status.BLOCK),
+
+    ("peds dose double the intended high-dose regimen (90mg/kg per dose, not per day)",
+     "amoxicillin 90mg/kg PO BD",
+     PatientInfo(age_years=5, weight_kg=20), Status.BLOCK),
+
+    ("peds interval below 8hr minimum",
+     "amoxicillin 25mg/kg PO 4 hourly",
+     PatientInfo(age_years=5, weight_kg=20), Status.BLOCK),
+
+    ("peds daily total modestly above high-dose ceiling - FLAG not BLOCK",
+     "amoxicillin 50mg/kg PO BD",
+     PatientInfo(age_years=5, weight_kg=20), Status.FLAG),
+
+    ("infant under 3mo dose exceeds reduced ceiling",
+     "amoxicillin 20mg/kg PO BD",
+     PatientInfo(age_years=0.1, weight_kg=5), Status.BLOCK),
+
+    ("infant under 3mo interval below 12hr minimum",
+     "amoxicillin 10mg/kg PO 8 hourly",
+     PatientInfo(age_years=0.1, weight_kg=5), Status.BLOCK),
+
+    ("adult exceeds 4g/day absolute ceiling",
+     "amoxicillin 1500mg PO TDS",
+     PatientInfo(age_years=40, weight_kg=75), Status.BLOCK),
+
+    ("adult interval below 8hr minimum",
+     "amoxicillin 500mg PO 4 hourly",
+     PatientInfo(age_years=40, weight_kg=75), Status.BLOCK),
+
+    ("misspelled drug name, genuinely dangerous dose - must not go silent",
+     "amoxicilin 2500mg PO TDS",
+     PatientInfo(age_years=12, weight_kg=50), Status.BLOCK),
+
+    # ---- missing-input handling ----
+    ("patient age not provided",
+     "amoxicillin 500mg PO TDS",
+     PatientInfo(weight_kg=70), Status.FLAG),
+
+    ("patient weight not provided for a child",
+     "amoxicillin 25mg/kg PO TDS",
+     PatientInfo(age_years=5), Status.FLAG),
+
+
+    ("standard young child (2-<6yr), 5mg",
+     "loratadine 5mg PO daily", PatientInfo(age_years=4, weight_kg=16), Status.PASS),
+
+    ("standard 6+/adult, 10mg",
+     "Claritin 10mg PO daily", PatientInfo(age_years=30, weight_kg=70), Status.PASS),
+
+    ("brand alias, young child",
+     "Claritin 5mg PO daily", PatientInfo(age_years=3, weight_kg=14), Status.PASS),
+
+    ("no dose stated",
+     "continue loratadine as charted", PatientInfo(age_years=30, weight_kg=70), Status.PASS),
+
+    ("under 2 years - avoid without guidance",
+     "loratadine 2.5mg PO daily", PatientInfo(age_years=1.5, weight_kg=10), Status.FLAG),
+
+    ("exceeds 10mg/day absolute ceiling",
+     "loratadine 20mg PO daily", PatientInfo(age_years=30, weight_kg=70), Status.BLOCK),
+
+    ("young child given the adult dose - flagged",
+     "loratadine 10mg PO daily", PatientInfo(age_years=4, weight_kg=16), Status.FLAG),
+
+    ("more frequent than once daily - blocked",
+     "loratadine 10mg PO 12 hourly", PatientInfo(age_years=30, weight_kg=70), Status.BLOCK),
+
+    ("mg/kg unit stated - not recognized, loratadine is age-based",
+     "loratadine 0.5mg/kg PO daily", PatientInfo(age_years=4, weight_kg=16), Status.FLAG),
+
+    ("patient age not provided",
+     "loratadine 10mg PO daily", PatientInfo(weight_kg=70), Status.FLAG),
+
+
+    ("standard low-end croup dose (0.15mg/kg)",
+     "dexamethasone 0.15mg/kg PO stat", PatientInfo(age_years=3, weight_kg=15), Status.PASS),
+
+    ("standard AAP high-end croup dose (0.6mg/kg)",
+     "dex 0.6mg/kg PO stat", PatientInfo(age_years=3, weight_kg=15), Status.PASS),
+
+    ("mid-range croup dose (0.3mg/kg)",
+     "Decadron 0.3mg/kg PO stat", PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("no dose stated",
+     "continue dexamethasone as charted", PatientInfo(age_years=5, weight_kg=20), Status.PASS),
+
+    ("large child at 0.6mg/kg genuinely exceeds the 16mg cap - correctly blocked, not silently reduced",
+     "dexamethasone 0.6mg/kg PO stat", PatientInfo(age_years=12, weight_kg=40), Status.BLOCK),
+
+    ("adult standard single dose",
+     "dexamethasone 8mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.PASS),
+
+    ("genuinely excessive - many multiples of standard",
+     "dexamethasone 5mg/kg PO stat", PatientInfo(age_years=3, weight_kg=15), Status.BLOCK),
+
+    ("modestly above standard rate, light enough patient that absolute cap isn't also triggered",
+     "dexamethasone 1.2mg/kg PO stat", PatientInfo(age_years=1, weight_kg=10), Status.FLAG),
+
+    ("adult dose above typical but not extreme - verify tier",
+     "dexamethasone 30mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.FLAG),
+
+    ("adult dose clearly excessive",
+     "dexamethasone 60mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.BLOCK),
+
+    ("interval too frequent for paediatric",
+     "dexamethasone 0.3mg/kg PO 6 hourly", PatientInfo(age_years=5, weight_kg=20), Status.BLOCK),
+
+    ("patient age not provided",
+     "dexamethasone 8mg PO stat", PatientInfo(weight_kg=70), Status.FLAG),
+
+    ("patient weight not provided for a child",
+     "dexamethasone 0.3mg/kg PO stat", PatientInfo(age_years=5), Status.FLAG),
+
+
+    ("standard dose (1.5mcg/kg)",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=6, weight_kg=22), Status.PASS),
+
+    ("low end of typical range (1.0mcg/kg)",
+     "fentanyl 1.0mcg/kg IN", PatientInfo(age_years=8, weight_kg=28), Status.PASS),
+
+    ("top of typical range (2.0mcg/kg)",
+     "fentanyl 2.0mcg/kg IN", PatientInfo(age_years=10, weight_kg=32), Status.PASS),
+
+    ("absolute mcg dose within range",
+     "fentanyl 30mcg IN", PatientInfo(age_years=8, weight_kg=25), Status.PASS),
+
+    ("no dose stated",
+     "continue fentanyl PRN as charted", PatientInfo(age_years=8, weight_kg=25), Status.PASS),
+
+    ("CRITICAL: mg/kg instead of mcg/kg - a 1000x unit confusion, must BLOCK",
+     "fentanyl 1.5mg/kg IN", PatientInfo(age_years=6, weight_kg=22), Status.BLOCK),
+
+    ("CRITICAL: mg instead of mcg absolute - must BLOCK",
+     "fentanyl 50mg IN", PatientInfo(age_years=6, weight_kg=22), Status.BLOCK),
+
+    ("exceeds the 100mcg absolute ceiling",
+     "fentanyl 150mcg IN", PatientInfo(age_years=15, weight_kg=60), Status.BLOCK),
+
+    ("rate above standard range - used in research settings, flagged not blocked",
+     "fentanyl 2.5mcg/kg IN", PatientInfo(age_years=8, weight_kg=25), Status.FLAG),
+
+    ("under 1 year - limited evidence base, flagged regardless of dose",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=0.5, weight_kg=7), Status.FLAG),
+
+    ("opioid-tolerant patient - flagged not silently cleared",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=15, weight_kg=50, opioid_tolerant=True), Status.FLAG),
+
+    ("redose interval below the 10-minute minimum",
+     "fentanyl 1.5mcg/kg IN q5min", PatientInfo(age_years=8, weight_kg=25), Status.BLOCK),
+
+    ("wrong route stated - out of scope for this rulebook",
+     "fentanyl 50mcg IV", PatientInfo(age_years=30, weight_kg=70), Status.FLAG),
+
+    ("patient age not provided",
+     "fentanyl 30mcg IN", PatientInfo(weight_kg=25), Status.FLAG),
+
+    ("patient weight not provided",
+     "fentanyl 1.5mcg/kg IN", PatientInfo(age_years=8), Status.FLAG),
+
+
+    ("standard peds naive, low end (0.1mg/kg)",
+     "oxycodone 0.1mg/kg PO 4 hourly", PatientInfo(age_years=8, weight_kg=25), Status.PASS),
+
+    ("standard peds naive, high end (0.2mg/kg)",
+     "oxycodone 0.2mg/kg PO 4 hourly", PatientInfo(age_years=8, weight_kg=25), Status.PASS),
+
+    ("standard adult naive, low end",
+     "oxycodone 5mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.PASS),
+
+    ("standard adult naive, high end",
+     "oxycodone 10mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.PASS),
+
+    ("brand alias",
+     "Endone 5mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.PASS),
+
+    ("no dose stated",
+     "continue oxycodone PRN as charted", PatientInfo(age_years=40, weight_kg=75), Status.PASS),
+
+    ("infant under 6mo, reduced standard dosing",
+     "oxycodone 0.03mg/kg PO 6 hourly", PatientInfo(age_years=0.3, weight_kg=6), Status.PASS),
+
+    ("exceeds naive per-dose cap for children",
+     "oxycodone 8mg PO 4 hourly", PatientInfo(age_years=8, weight_kg=25), Status.BLOCK),
+
+    ("exceeds naive adult ceiling clearly",
+     "oxycodone 25mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.BLOCK),
+
+    ("above naive adult range but not extreme - verify tier",
+     "oxycodone 15mg PO stat", PatientInfo(age_years=40, weight_kg=75), Status.FLAG),
+
+    ("opioid-tolerant patient given higher dose - flagged not blocked",
+     "oxycodone 15mg PO stat", PatientInfo(age_years=40, weight_kg=75, opioid_tolerant=True), Status.FLAG),
+
+    ("infant under 6mo exceeds reduced cap",
+     "oxycodone 0.1mg/kg PO 6 hourly", PatientInfo(age_years=0.3, weight_kg=6), Status.BLOCK),
+
+    ("interval too frequent for paediatric naive dosing",
+     "oxycodone 0.15mg/kg PO 2 hourly", PatientInfo(age_years=8, weight_kg=25), Status.BLOCK),
+
+    ("patient age not provided",
+     "oxycodone 5mg PO stat", PatientInfo(weight_kg=70), Status.FLAG),
+
+    ("patient weight not provided for a child",
+     "oxycodone 0.1mg/kg PO 4 hourly", PatientInfo(age_years=8), Status.FLAG),
+
+]
+
+
+def run():
+    passed = 0
+    failed = 0
+    for label, text, patient, expected in CASES:
+        decisions = check_order(text, patient)
+        if not decisions:
+            print(f"FAIL  [{label}] - no decision produced at all")
+            failed += 1
+            continue
+        actual = decisions[0].status
+        if actual == expected:
+            print(f"pass  [{label}] -> {actual.value}")
+            passed += 1
+        else:
+            print(f"FAIL  [{label}] -> got {actual.value}, expected {expected.value}")
+            print(f"        reasons: {decisions[0].reasons}")
+            failed += 1
+
+    print(f"\n{passed} passed, {failed} failed, {len(CASES)} total")
+    return failed == 0
+
 
 if __name__ == "__main__":
-    ai_generated_text = """
-    Patient presenting with fever, recommend paracetamol 15mg/kg PO 4-6 hourly PRN.
-    Also consider paracetamol 1200mg PO 6 hourly if pain is severe.
-    Alternatively, ibuprofen 8mg/kg PO 6-8 hourly PRN may be given for inflammation.
-    For the ear infection, start amoxicillin 40mg/kg PO BD.
-    For allergy symptoms, loratadine 10mg PO daily.
-    For croup, dexamethasone 0.3mg/kg PO stat.
-    For severe pain, fentanyl 1.5mcg/kg IN may be given.
-    """
-
-    patient = PatientInfo(age_years=6, weight_kg=22)
-
-    print("Checking AI-generated text against patient: age=6, weight=22kg\n")
-
-    for decision in check_order(ai_generated_text, patient):
-        print(f"[{decision.status.value}] {decision.extracted.raw_segment.strip()}")
-        for reason in decision.reasons:
-            print(f"    - {reason}")
-        print()
-
-        audit = to_audit_record(decision)
-        print("    audit record:")
-        print("   ", json.dumps(audit, indent=2).replace("\n", "\n    "))
-        print()
+    ok = run()
+    sys.exit(0 if ok else 1)
