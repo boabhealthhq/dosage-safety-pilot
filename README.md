@@ -1,9 +1,6 @@
 # Dosage Safety Pilot — v0 (paracetamol, ibuprofen, amoxicillin, loratadine, dexamethasone, fentanyl, oxycodone)
 
-<!-- Once this repo is on GitHub, replace YOUR-USERNAME/YOUR-REPO-NAME below
-     with the real path and this badge will show live pass/fail status:
-     ![CI](https://github.com/YOUR-USERNAME/YOUR-REPO-NAME/actions/workflows/ci.yml/badge.svg)
--->
+![CI](https://github.com/boabhealthhq/dosage-safety-pilot/actions/workflows/ci.yml/badge.svg)
 
 
 A rules-based safety layer that checks AI-generated clinical text for
